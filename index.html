@@ -52,6 +52,17 @@
       <option value="all" selected>All</option>
     </select>
   </div>
+  <div id="headerInclude"></div>
+
+<script>
+  fetch("header.html")
+    .then(res => res.text())
+    .then(data => {
+      document.getElementById("headerInclude").innerHTML = data;
+      loadHeaderFromStorage();
+    });
+</script>
+
 
   <p id="result">Scan a barcode...</p>
 
