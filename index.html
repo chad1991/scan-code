@@ -40,7 +40,7 @@
 <body>
   <h2>📷 Barcode Scanner</h2>
 
-  <!-- Camera Preview Only -->
+  <!-- Camera Preview -->
   <video id="cameraPreview" autoplay playsinline muted></video>
 
   <!-- Scan Mode Selector -->
@@ -53,16 +53,8 @@
     </select>
   </div>
 
-  <!-- Header Include -->
+  <!-- Batch Header (Loaded from header.html) -->
   <div id="headerInclude"></div>
-  <script>
-    fetch("header.html")
-      .then(res => res.text())
-      .then(data => {
-        document.getElementById("headerInclude").innerHTML = data;
-        loadHeaderFromStorage();
-      });
-  </script>
 
   <p id="result">Scan a barcode...</p>
 
@@ -75,11 +67,11 @@
     <button type="button" onclick="nextBatch()">➡️ Next</button>
   </div>
 
-  <!-- Success & Error Beep Sounds -->
+  <!-- Beep Sounds -->
   <audio id="beepSuccess" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
   <audio id="beepError" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
 
-  <!-- Manual input form -->
+  <!-- Manual Entry -->
   <div id="manualForm">
     <h4>✍️ Manual Entry</h4>
     <input type="text" id="manualBarcode" placeholder="Barcode" />
@@ -96,6 +88,14 @@
 
   <script src="script.js"></script>
   <script>
+    // Load header.html dynamically
+    fetch("header.html")
+      .then(res => res.text())
+      .then(data => {
+        document.getElementById("headerInclude").innerHTML = data;
+        loadHeaderFromStorage();
+      });
+
     // Restore scan mode
     document.getElementById("scanModeSelect").value = localStorage.getItem("scanMode") || "all";
   </script>
