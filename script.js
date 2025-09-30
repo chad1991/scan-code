@@ -7,13 +7,13 @@ let currentCameraIndex = 0;
 
 let batches = JSON.parse(localStorage.getItem("batches") || "[]");
 
-// ZXing reader reference (for 2D)
+// ZXing reader reference
 let zxingReader = null;
 
 // Scan mode: "1d", "2d", "all"
 let scanMode = localStorage.getItem("scanMode") || "all";
 
-// Load cameras
+// Load cameras on start
 window.addEventListener("load", async () => {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -59,7 +59,7 @@ function useCamera(index) {
   const deviceId = videoInputDevices[index].deviceId;
   const preview = document.getElementById("cameraPreview");
 
-  // Start preview stream
+  // Start preview
   navigator.mediaDevices.getUserMedia({
     video: { deviceId: { exact: deviceId } }
   }).then(stream => {
@@ -74,8 +74,7 @@ function useCamera(index) {
             if (text) {
               scanCooldown = true;
               document.getElementById("beepSuccess").play();
-              document.getElementById("result").innerText =
-                `✅ Scanned (2D): ${text}`;
+              document.getElementById("result").innerText = `✅ Scanned (2D): ${text}`;
               saveData(text, 1, 0);
               setTimeout(() => { scanCooldown = false; }, 1000);
             }
@@ -95,22 +94,15 @@ function useCamera(index) {
     Quagga.init({
       inputStream: {
         type: "LiveStream",
-        target: document.getElementById("cameraPreview"), // ✅ direct to preview
+        target: preview,
         constraints: { deviceId: deviceId, width: 640, height: 480 }
       },
       decoder: {
         readers: [
-          "code_128_reader",
-          "ean_reader",
-          "ean_8_reader",
-          "code_39_reader",
-          "code_39_vin_reader",
-          "codabar_reader",
-          "upc_reader",
-          "upc_e_reader",
-          "i2of5_reader",
-          "2of5_reader",
-          "code_93_reader"
+          "code_128_reader","ean_reader","ean_8_reader",
+          "code_39_reader","code_39_vin_reader","codabar_reader",
+          "upc_reader","upc_e_reader","i2of5_reader",
+          "2of5_reader","code_93_reader"
         ]
       },
       locate: true
@@ -141,15 +133,12 @@ function useCamera(index) {
 
 function stopScanner() {
   try { Quagga.stop(); } catch (e) {}
-
   try {
     if (zxingReader) {
-      try { zxingReader.reset(); } catch (e) { console.warn("zxing reset error", e); }
+      try { zxingReader.reset(); } catch (e) {}
       zxingReader = null;
     }
-  } catch (zxErr) {
-    console.warn("ZXing stop error:", zxErr);
-  }
+  } catch (zxErr) { console.warn("ZXing stop error:", zxErr); }
 
   const preview = document.getElementById("cameraPreview");
   if (preview && preview.srcObject) {
@@ -159,7 +148,7 @@ function stopScanner() {
 }
 function startScanner() { useCamera(currentCameraIndex); }
 
-// ---------------- Data handling functions ----------------
+// ---------------- Data handling ----------------
 
 function saveData(barcode, qty, price) {
   const existing = entries.find(e => e.barcode === barcode);
@@ -253,7 +242,7 @@ function nextBatch() {
   renderEntries();
   renderBatches();
 
-  alert("Batch saved! You can now input a new one.");
+  alert("Batch saved!");
 }
 
 function downloadExcel() {
@@ -304,7 +293,7 @@ function persist() {
   localStorage.setItem("entries", JSON.stringify(entries));
 }
 
-// --- Header form persistence ---
+// Header persistence
 function saveHeaderToStorage() {
   const headerData = {
     date: document.getElementById("logDate")?.value || "",
@@ -335,16 +324,16 @@ function renderBatches() {
     li.style.marginBottom = "10px";
 
     const totalQty = batch.entries.reduce((sum, e) => sum + e.quantity, 0);
-    li.innerHTML = `
-      <div style="cursor:pointer; font-weight:bold;">
-        📦 Batch ${i + 1}: ${batch.header.date || "No Date"} | ${batch.header.store || "No Store"} | Discount: ${batch.header.discount}% | Items: ${batch.entries.length}, Total Qty: ${totalQty}
-      </div>
-    `;
+    li.innerHTML = `<strong>Batch ${i + 1}</strong> - ${batch.header.date} - ${batch.header.store} - Discount: ${batch.header.discount}% - Total Qty: ${totalQty}`;
+
+    const exportBtn = document.createElement("button");
+    exportBtn.textContent = "📤 Export Only This";
+    exportBtn.onclick = () => exportSingleBatch(batch, i + 1);
+    li.appendChild(exportBtn);
 
     const delBtn = document.createElement("button");
     delBtn.textContent = "🗑️ Delete";
-    delBtn.onclick = ev => {
-      ev.stopPropagation();
+    delBtn.onclick = () => {
       if (confirm("Delete this batch?")) {
         batches.splice(i, 1);
         localStorage.setItem("batches", JSON.stringify(batches));
@@ -352,14 +341,6 @@ function renderBatches() {
       }
     };
     li.appendChild(delBtn);
-
-    const exportBtn = document.createElement("button");
-    exportBtn.textContent = "📤 Export Only This";
-    exportBtn.onclick = ev => {
-      ev.stopPropagation();
-      exportSingleBatch(batch, i + 1);
-    };
-    li.appendChild(exportBtn);
 
     list.appendChild(li);
   });
@@ -376,16 +357,14 @@ function exportSingleBatch(batch, index) {
   batch.entries.forEach(e => {
     wsData.push([e.barcode, e.quantity, e.price]);
   });
-  wsData.push([]);
 
   const ws = XLSX.utils.aoa_to_sheet(wsData);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, `Batch${index}`);
+  XLSX.utils.book_append_sheet(wb, ws, `Batch ${index}`);
   XLSX.writeFile(wb, `batch_${index}.xlsx`);
 }
 
-// Initialize UI
+// Init
 renderEntries();
 renderBatches();
-loadHeaderFromStorage();
-
+setTimeout(loadHeaderFromStorage, 1000); // delay to wait header.html load
