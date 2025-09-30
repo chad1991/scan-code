@@ -1,15 +1,24 @@
-<!-- header.html -->
-<div style="margin: 15px 0; padding: 10px; border: 1px solid #ccc; border-radius: 6px; display: inline-block; text-align: left; width: 300px;">
-  <h3>📝 Batch Header</h3>
-  
-  <label for="logDate">Date:</label><br>
-  <input type="date" id="logDate" style="width:100%; margin-bottom:10px;" />
-  <br>
-  
-  <label for="storeName">Store:</label><br>
-  <input type="text" id="storeName" placeholder="Store name" style="width:100%; margin-bottom:10px;" />
-  <br>
-  
-  <label for="discount">Discount:</label><br>
-  <input type="number" id="discount" value="0" min="0" max="100" style="width:100%;" /> %
+<div id="batchHeader">
+  <label>Date: <input type="date" id="batchDate" /></label>
+  <label>Store: <input type="text" id="batchStore" placeholder="Store Name" /></label>
+  <label>Discount: <input type="number" id="batchDiscount" placeholder="%" min="0" max="100" /></label>
 </div>
+<script>
+  function loadHeaderFromStorage() {
+    document.getElementById("batchDate").value = localStorage.getItem("batchDate") || "";
+    document.getElementById("batchStore").value = localStorage.getItem("batchStore") || "";
+    document.getElementById("batchDiscount").value = localStorage.getItem("batchDiscount") || "";
+  }
+
+  function saveHeaderToStorage() {
+    localStorage.setItem("batchDate", document.getElementById("batchDate").value);
+    localStorage.setItem("batchStore", document.getElementById("batchStore").value);
+    localStorage.setItem("batchDiscount", document.getElementById("batchDiscount").value);
+  }
+
+  document.addEventListener("change", e => {
+    if (["batchDate", "batchStore", "batchDiscount"].includes(e.target.id)) {
+      saveHeaderToStorage();
+    }
+  });
+</script>
