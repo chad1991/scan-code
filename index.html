@@ -1,1 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>📷 Barcode Scanner Logsheet</title>
+
+  <!-- Quagga (1D) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+  <!-- ZXing (2D/QR & many formats) -->
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
+  <!-- SheetJS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; padding: 10px; text-align: center; }
+    #cameraPreview {
+      width: 320px;
+      height: 240px;
+      border: 3px solid #333;
+      border-radius: 8px;
+      background: black;
+      margin: 15px auto;
+      display: block;
+    }
+    #result { margin-top: 10px; font-weight: bold; }
+    .actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
+    .actions button { flex: 1; min-width: 120px; padding: 8px; border-radius: 6px; border: none; cursor: pointer; }
+    #entriesList { list-style: none; padding: 0; margin-top: 15px; text-align: left; }
+    #entriesList li { margin: 6px 0; padding: 6px; background: #f9f9f9; border-radius: 6px; cursor: pointer; }
+    #manualForm { margin-top: 15px; padding: 10px; border: 1px solid #ccc; border-radius: 6px; display: inline-block; text-align: left; }
+    #manualForm input { padding: 6px; margin: 4px; width: 140px; }
+    #manualForm button { padding: 6px 10px; margin: 4px; border: none; border-radius: 6px; cursor: pointer;
+      background: #007bff; color: white; }
+    #batchesList { list-style: none; padding: 0; margin-top: 15px; text-align: left; }
+    #batchesList li { margin: 6px 0; padding: 6px; background: #eef; border-radius: 6px; }
+    #batchesList button { padding: 2px 6px; margin-left: 10px; }
+  </style>
+</head>
+<body>
+  <h2>📷 Barcode Scanner</h2>
+
+  <!-- Camera Preview Only -->
+  <video id="cameraPreview" autoplay playsinline muted></video>
+
+  <!-- Scan Mode Selector -->
+  <div style="margin-top:10px;">
+    <label><strong>Scan Mode:</strong></label>
+    <select id="scanModeSelect" onchange="switchMode(this.value)">
+      <option value="1d">1D Only</option>
+      <option value="2d">2D Only</option>
+      <option value="all" selected>All</option>
+    </select>
+  </div>
+
+  <p id="result">Scan a barcode...</p>
+
+  <div class="actions">
+    <button type="button" onclick="startScanner()">▶️ Restart</button>
+    <button type="button" onclick="toggleCamera()">🔄 Toggle Camera</button>
+    <button type="button" onclick="stopScanner()">⏹ Stop</button>
+    <button type="button" onclick="downloadExcel()">💾 Save Excel</button>
+    <button type="button" onclick="clearHistory()">🗑️ Clear All</button>
+    <button type="button" onclick="nextBatch()">➡️ Next</button>
+  </div>
+
+  <!-- Success & Error Beep Sounds -->
+  <audio id="beepSuccess" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
+  <audio id="beepError" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
+  <!-- Manual input form -->
+  <div id="manualForm">
+    <h4>✍️ Manual Entry</h4>
+    <input type="text" id="manualBarcode" placeholder="Barcode" />
+    <input type="number" id="manualQty" placeholder="Qty" min="1" value="1" />
+    <input type="number" id="manualPrice" placeholder="Price" step="0.01" />
+    <button onclick="addManualEntry()">Add</button>
+  </div>
+
+  <h3>📋 Saved Entries</h3>
+  <ul id="entriesList"></ul>
+
+  <h3>📦 Saved Batches</h3>
+  <ul id="batchesList"></ul>
+
+  <script src="script.js"></script>
+  <script>
+    // Restore scan mode
+    document.getElementById("scanModeSelect").value = localStorage.getItem("scanMode") || "all";
+  </script>
+</body>
+</html>
 
