@@ -1,200 +1,137 @@
+// ------------------- Globals -------------------
 let entries = JSON.parse(localStorage.getItem("entries") || "[]");
+let batches = JSON.parse(localStorage.getItem("batches") || "[]");
 let nextId = entries.length ? Math.max(...entries.map(e => e.id)) + 1 : 1;
-let scanCooldown = false;
 
 let videoInputDevices = [];
 let currentCameraIndex = 0;
+let currentScanMode = localStorage.getItem("scanMode") || "all";
+let codeReader = null;
 
-let batches = JSON.parse(localStorage.getItem("batches") || "[]");
-
-// ZXing reader reference
-let zxingReader = null;
-
-// Scan mode: "1d", "2d", "all"
-let scanMode = localStorage.getItem("scanMode") || "all";
-
-// Load cameras on start
-window.addEventListener("load", async () => {
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    videoInputDevices = devices.filter(d => d.kind === "videoinput");
-
-    const savedIndex = localStorage.getItem("lastCameraIndex");
-    if (savedIndex !== null) currentCameraIndex = parseInt(savedIndex, 10);
-
-    if (videoInputDevices.length > 0) {
-      useCamera(currentCameraIndex);
-    } else {
-      console.warn("No video input devices found.");
-    }
-  } catch (err) {
-    console.error("Camera init error:", err);
-    alert("Camera access is required. Please allow it.");
-  }
-});
-
-// Toggle camera
-function toggleCamera() {
-  if (!videoInputDevices.length) {
-    alert("No cameras to toggle.");
-    return;
-  }
-  currentCameraIndex = (currentCameraIndex + 1) % videoInputDevices.length;
-  localStorage.setItem("lastCameraIndex", currentCameraIndex);
-  useCamera(currentCameraIndex);
-}
-
-// Switch scan mode
+// ------------------- Scan Mode Control -------------------
 function switchMode(mode) {
-  scanMode = mode;
+  currentScanMode = mode;
   localStorage.setItem("scanMode", mode);
   stopScanner();
   startScanner();
 }
 
-// Start camera
-function useCamera(index) {
-  stopScanner();
+// ------------------- Scanner Start/Stop -------------------
+async function startScanner() {
+  stopScanner(); // ensure clean restart
 
-  const deviceId = videoInputDevices[index].deviceId;
-  const preview = document.getElementById("cameraPreview");
+  videoInputDevices = await navigator.mediaDevices.enumerateDevices()
+    .then(devices => devices.filter(d => d.kind === "videoinput"));
 
-  // Start preview
-  navigator.mediaDevices.getUserMedia({
-    video: { deviceId: { exact: deviceId } }
-  }).then(stream => {
-    preview.srcObject = stream;
-
-    if (scanMode === "2d" || scanMode === "all") {
-      try {
-        zxingReader = new ZXing.BrowserMultiFormatReader();
-        zxingReader.decodeFromVideoDevice(deviceId, preview, (result, err) => {
-          if (result && !scanCooldown) {
-            const text = result.getText();
-            if (text) {
-              scanCooldown = true;
-              document.getElementById("beepSuccess").play();
-              document.getElementById("result").innerText = `✅ Scanned (2D): ${text}`;
-              saveData(text, 1, 0);
-              setTimeout(() => { scanCooldown = false; }, 1000);
-            }
-          } else if (err && !(err instanceof ZXing.NotFoundException)) {
-            console.debug("ZXing err", err);
-          }
-        });
-      } catch (zxErr) {
-        console.error("ZXing init error:", zxErr);
-      }
+  const constraints = {
+    video: {
+      deviceId: videoInputDevices[currentCameraIndex]?.deviceId || undefined,
+      facingMode: "environment"
     }
-  }).catch(err => {
-    console.error("Preview error:", err);
-  });
+  };
 
-  if (scanMode === "1d" || scanMode === "all") {
+  const stream = await navigator.mediaDevices.getUserMedia(constraints);
+  const videoElement = document.getElementById("cameraPreview");
+  videoElement.srcObject = stream;
+
+  // ZXing for 2D/All
+  if (currentScanMode === "2d" || currentScanMode === "all") {
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    codeReader.decodeFromVideoDevice(
+      videoInputDevices[currentCameraIndex]?.deviceId || null,
+      "cameraPreview",
+      (result, err) => {
+        if (result) {
+          handleScannedCode(result.getText());
+        }
+      }
+    );
+  }
+
+  // Quagga for 1D/All
+  if (currentScanMode === "1d" || currentScanMode === "all") {
     Quagga.init({
       inputStream: {
         type: "LiveStream",
-        target: preview,
-        constraints: { deviceId: deviceId, width: 640, height: 480 }
+        target: videoElement,
+        constraints: constraints.video
       },
       decoder: {
-        readers: [
-          "code_128_reader","ean_reader","ean_8_reader",
-          "code_39_reader","code_39_vin_reader","codabar_reader",
-          "upc_reader","upc_e_reader","i2of5_reader",
-          "2of5_reader","code_93_reader"
-        ]
-      },
-      locate: true
-    }, function (err) {
-      if (err) {
-        console.error("Quagga init failed:", err);
-        alert("Camera initialization failed for Quagga.");
-        return;
+        readers: ["code_128_reader", "ean_reader", "ean_8_reader", "upc_reader", "upc_e_reader"]
       }
-      Quagga.start();
-    });
-
-    Quagga.offDetected();
-    Quagga.onDetected(data => {
-      let code = data.codeResult && data.codeResult.code;
-      if (code && !scanCooldown) {
-        scanCooldown = true;
-        document.getElementById("beepSuccess").play();
-        document.getElementById("result").innerText = "✅ Scanned (1D): " + code;
-        saveData(code, 1, 0);
-        setTimeout(() => { scanCooldown = false; }, 1000);
-      } else if (!code) {
-        document.getElementById("beepError").play();
+    }, err => {
+      if (!err) {
+        Quagga.start();
+        Quagga.onDetected(data => {
+          handleScannedCode(data.codeResult.code);
+        });
       }
     });
   }
 }
 
 function stopScanner() {
-  try { Quagga.stop(); } catch (e) {}
-  try {
-    if (zxingReader) {
-      try { zxingReader.reset(); } catch (e) {}
-      zxingReader = null;
-    }
-  } catch (zxErr) { console.warn("ZXing stop error:", zxErr); }
+  // Stop Quagga
+  if (Quagga.running) {
+    Quagga.stop();
+  }
 
-  const preview = document.getElementById("cameraPreview");
-  if (preview && preview.srcObject) {
-    preview.srcObject.getTracks().forEach(track => track.stop());
-    preview.srcObject = null;
+  // Stop ZXing
+  if (codeReader) {
+    codeReader.reset();
+    codeReader = null;
+  }
+
+  // Stop video stream
+  const videoElement = document.getElementById("cameraPreview");
+  if (videoElement.srcObject) {
+    videoElement.srcObject.getTracks().forEach(track => track.stop());
+    videoElement.srcObject = null;
   }
 }
-function startScanner() { useCamera(currentCameraIndex); }
 
-// ---------------- Data handling ----------------
-
-function saveData(barcode, qty, price) {
-  const existing = entries.find(e => e.barcode === barcode);
-  if (existing) {
-    existing.quantity += qty;
-    if (price > 0) existing.price = price;
+// ------------------- Camera Toggle -------------------
+function toggleCamera() {
+  if (videoInputDevices.length > 1) {
+    currentCameraIndex = (currentCameraIndex + 1) % videoInputDevices.length;
+    startScanner();
   } else {
-    entries.push({ id: nextId++, barcode, quantity: qty, price });
+    alert("No secondary camera found!");
   }
-  persist();
+}
+
+// ------------------- Entry Management -------------------
+function handleScannedCode(code) {
+  const beepSuccess = document.getElementById("beepSuccess");
+  const beepError = document.getElementById("beepError");
+  const existing = entries.find(e => e.barcode === code);
+
+  if (existing) {
+    existing.quantity += 1;
+    beepSuccess.play();
+  } else {
+    entries.push({ id: nextId++, barcode: code, quantity: 1, price: 0 });
+    beepSuccess.play();
+  }
+  localStorage.setItem("entries", JSON.stringify(entries));
   renderEntries();
+  document.getElementById("result").textContent = `Scanned: ${code}`;
 }
 
 function addManualEntry() {
   const barcode = document.getElementById("manualBarcode").value.trim();
-  const qty = parseInt(document.getElementById("manualQty").value, 10);
+  const qty = parseInt(document.getElementById("manualQty").value) || 1;
   const price = parseFloat(document.getElementById("manualPrice").value) || 0;
-  if (!barcode || qty <= 0) {
-    alert("Enter valid barcode and quantity.");
-    return;
-  }
-  saveData(barcode, qty, price);
+
+  if (!barcode) return;
+
+  entries.push({ id: nextId++, barcode, quantity: qty, price });
+  localStorage.setItem("entries", JSON.stringify(entries));
+  renderEntries();
+
   document.getElementById("manualBarcode").value = "";
   document.getElementById("manualQty").value = 1;
   document.getElementById("manualPrice").value = "";
-}
-
-function editEntry(id) {
-  const entry = entries.find(e => e.id === id);
-  if (!entry) return;
-  const newBarcode = prompt("Edit Barcode:", entry.barcode);
-  if (newBarcode === null) return;
-  const newQty = parseInt(prompt("Edit Quantity:", entry.quantity), 10);
-  const newPrice = parseFloat(prompt("Edit Price:", entry.price)) || 0;
-  if (!newBarcode.trim() || isNaN(newQty) || newQty <= 0) return;
-  entry.barcode = newBarcode.trim();
-  entry.quantity = newQty;
-  entry.price = newPrice;
-  persist();
-  renderEntries();
-}
-
-function deleteEntry(id) {
-  entries = entries.filter(e => e.id !== id);
-  persist();
-  renderEntries();
 }
 
 function renderEntries() {
@@ -202,132 +139,49 @@ function renderEntries() {
   list.innerHTML = "";
   entries.forEach(e => {
     const li = document.createElement("li");
-    li.textContent = `${e.barcode} - Qty: ${e.quantity} - ₱${e.price.toFixed(2)}`;
-    li.onclick = () => editEntry(e.id);
-
-    const delBtn = document.createElement("button");
-    delBtn.textContent = "❌";
-    delBtn.style.marginLeft = "10px";
-    delBtn.onclick = ev => { ev.stopPropagation(); deleteEntry(e.id); };
-    li.appendChild(delBtn);
-
+    li.textContent = `${e.barcode} | Qty: ${e.quantity} | Price: ${e.price}`;
     list.appendChild(li);
   });
 }
 
-function nextBatch() {
-  if (entries.length === 0) {
-    alert("No entries to save for this batch!");
-    return;
+function clearHistory() {
+  if (confirm("Clear all entries?")) {
+    entries = [];
+    localStorage.setItem("entries", "[]");
+    renderEntries();
   }
+}
 
-  const headerData = {
-    date: document.getElementById("logDate")?.value || "",
-    store: document.getElementById("storeName")?.value || "",
-    discount: document.getElementById("discount")?.value || "0"
+// ------------------- Batch Management -------------------
+function nextBatch() {
+  if (entries.length === 0) return alert("No entries to save!");
+
+  const header = {
+    date: localStorage.getItem("batchDate") || "",
+    store: localStorage.getItem("batchStore") || "",
+    discount: localStorage.getItem("batchDiscount") || "0"
   };
 
-  batches.push({
-    header: headerData,
-    entries: JSON.parse(JSON.stringify(entries))
-  });
+  batches.push({ header, entries });
   localStorage.setItem("batches", JSON.stringify(batches));
 
-  document.getElementById("logDate").value = "";
-  document.getElementById("storeName").value = "";
-  document.getElementById("discount").value = "0";
   entries = [];
-  nextId = 1;
-  persist();
+  localStorage.setItem("entries", "[]");
   renderEntries();
   renderBatches();
-
-  alert("Batch saved!");
-}
-
-function downloadExcel() {
-  if (entries.length > 0) {
-    if (confirm("Save current entries as a batch before export?")) {
-      nextBatch();
-    }
-  }
-
-  if (batches.length === 0) {
-    alert("No data to export!");
-    return;
-  }
-
-  let wsData = [];
-  batches.forEach((batch, i) => {
-    wsData.push([`Batch ${i + 1}`]);
-    wsData.push(["Date", batch.header.date]);
-    wsData.push(["Store", batch.header.store]);
-    wsData.push(["Discount", batch.header.discount + "%"]);
-    wsData.push([]);
-    wsData.push(["Barcode", "Quantity", "Price"]);
-    batch.entries.forEach(e => {
-      wsData.push([e.barcode, e.quantity, e.price]);
-    });
-    wsData.push([]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Logsheet");
-  XLSX.writeFile(wb, "logsheet.xlsx");
-}
-
-function clearHistory() {
-  if (confirm("Clear all entries and batches?")) {
-    entries = [];
-    batches = [];
-    nextId = 1;
-    persist();
-    localStorage.removeItem("batches");
-    renderEntries();
-    renderBatches();
-  }
-}
-
-function persist() {
-  localStorage.setItem("entries", JSON.stringify(entries));
-}
-
-// Header persistence
-function saveHeaderToStorage() {
-  const headerData = {
-    date: document.getElementById("logDate")?.value || "",
-    store: document.getElementById("storeName")?.value || "",
-    discount: document.getElementById("discount")?.value || "0"
-  };
-  localStorage.setItem("headerData", JSON.stringify(headerData));
-}
-
-function loadHeaderFromStorage() {
-  const headerData = JSON.parse(localStorage.getItem("headerData") || "{}");
-  if (headerData.date) document.getElementById("logDate").value = headerData.date;
-  if (headerData.store) document.getElementById("storeName").value = headerData.store;
-  if (headerData.discount) document.getElementById("discount").value = headerData.discount;
-
-  ["logDate","storeName","discount"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.addEventListener("input", saveHeaderToStorage);
-  });
 }
 
 function renderBatches() {
   const list = document.getElementById("batchesList");
   list.innerHTML = "";
-
   batches.forEach((batch, i) => {
-    const li = document.createElement("li");
-    li.style.marginBottom = "10px";
-
     const totalQty = batch.entries.reduce((sum, e) => sum + e.quantity, 0);
-    li.innerHTML = `<strong>Batch ${i + 1}</strong> - ${batch.header.date} - ${batch.header.store} - Discount: ${batch.header.discount}% - Total Qty: ${totalQty}`;
+    const li = document.createElement("li");
+    li.innerHTML =
+      `<strong>Batch ${i + 1}</strong> - ${batch.header.date} - ${batch.header.store} - Discount: ${batch.header.discount}% - Total Qty: ${totalQty}`;
 
     const exportBtn = document.createElement("button");
-    exportBtn.textContent = "📤 Export Only This";
+    exportBtn.textContent = "💾 Export";
     exportBtn.onclick = () => exportSingleBatch(batch, i + 1);
     li.appendChild(exportBtn);
 
@@ -364,7 +218,18 @@ function exportSingleBatch(batch, index) {
   XLSX.writeFile(wb, `batch_${index}.xlsx`);
 }
 
-// Init
+// ------------------- Excel Export -------------------
+function downloadExcel() {
+  let wsData = [["Barcode", "Quantity", "Price"]];
+  entries.forEach(e => wsData.push([e.barcode, e.quantity, e.price]));
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Entries");
+  XLSX.writeFile(wb, "entries.xlsx");
+}
+
+// ------------------- Init -------------------
 renderEntries();
 renderBatches();
-setTimeout(loadHeaderFromStorage, 1000); // delay to wait header.html load
+startScanner();
